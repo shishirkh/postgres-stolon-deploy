@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: stolon-keeper
+spec:
+  serviceName: "stolon-keeper"
+  replicas: 3
+  selector:
+    matchLabels:
+      app: stolon-keeper
+  template:
+    metadata:
+      labels:
+        app: stolon-keeper
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      terminationGracePeriodSeconds: 10
+      initContainers:
+        - name: ict
+          image: hashicorp/consul-template:alpine
+          env:
+          - name: VAULT_TOKEN
+            value: "s.JNddOecG5JQz7fliidPmCa5B"
+          - name: CONSUL_ADDR
+            value: "192.168.49.2:31651"
+          - name: VAULT_ADDR
+            value: "http://192.168.49.2:30537"
+          - name: INPUT_FILE
+            value: "/input/config.tpl"
+          - name: OUTPUT_FILE
+            value: "/output/password"
+          - name: LOG_LEVEL
+            value: "error"
+          args:
+          - -log-level=$(LOG_LEVEL)
+          - -consul-addr=$(CONSUL_ADDR)
+          - -vault-addr=$(VAULT_ADDR)
+          - -template=$(INPUT_FILE):$(OUTPUT_FILE)
+          - -once
+          volumeMounts:
+          - name: ct-input
+            mountPath: /input/
+          - name: ct-output
+            mountPath: /output/
+      containers:
+        - name: stolon-keeper
+          image: shishirkhandelwal/stolon:pg12
+          command:
+            - "/bin/bash"
+            - "-ec"
+            - |
+              # Generate our keeper uid using the pod index
+              IFS='-' read -ra ADDR <<< "$(hostname)"
+              export STKEEPER_UID="keeper${ADDR[-1]}"
+              export POD_IP=$(hostname -i)
+              export STKEEPER_PG_LISTEN_ADDRESS=$POD_IP
+              export STOLON_DATA=/stolon-data
+              chown stolon:stolon $STOLON_DATA
+              exec gosu stolon stolon-keeper --data-dir $STOLON_DATA
+          env:
+            - name: STKEEPER_CLUSTER_NAME
+              value: "stolon"
+            - name: STKEEPER_LOG_COLOR
+              value: "true"
+            - name: STKEEPER_LOG_LEVEL
+              value: "debug"
+            - name: STKEEPER_METRICS_LISTEN_ADDRESS
+              value: "0.0.0.0:8080"
+            - name: STKEEPER_PG_LISTEN_ADDRESS 
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: STKEEPER_PG_PORT
+              value: "5432"
+            - name: STKEEPER_PG_REPL_USERNAME
+              value: "repluser"
+           #- name: STKEEPER_PG_REPL_PASSWORD
+           #  value: "password1"
+            - name: STKEEPER_PG_REPL_PASSWORDFILE
+              value: "/etc/secrets/stolon/password"
+            - name: STKEEPER_PG_SU_USERNAME
+              value: "stolon"
+           #- name: STKEEPER_PG_SU_PASSWORD
+           #  value: "password1"
+            - name: STKEEPER_PG_SU_PASSWORDFILE
+              value: "/etc/secrets/stolon/password"
+            - name: STKEEPER_STORE_BACKEND
+              value: "consul"
+            - name: STKEEPER_STORE_ENDPOINTS
+              value: "consul-consul-ui:80"
+          ports:
+            - containerPort: 5432
+            - containerPort: 8080
+          volumeMounts:
+            - mountPath: /stolon-data
+              name: data
+            - name: ct-output
+              mountPath: /etc/secrets/stolon/
+            - name: ct-input
+              mountPath: /input/
+      volumes:
+        - name: ct-input
+          configMap:
+            name: stolon-password-from-vault 
+        - name: ct-output
+          emptyDir:
+            medium: Memory
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        annotations:
+          volume.alpha.kubernetes.io/storage-class: standard
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 512Mi

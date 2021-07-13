@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: stolonctl
+  name: stolonctl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stolonctl
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: stolonctl
+    spec:
+      containers:
+      - image: shishirkhandelwal/stolon:pg12
+        name: stolon
+        env:
+        - name: POSTGRES_PASSWORD
+          value: "random"
+        resources: {}
+status: {}

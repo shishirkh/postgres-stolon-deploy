@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stolon-proxy
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: stolon-proxy 
+  template:
+    metadata:
+      labels:
+        app: stolon-proxy
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+        - name: stolon-proxy
+          image: shishirkhandelwal/stolon:pg12
+          command:
+            - "/bin/bash"
+            - "-ec"
+            - "exec gosu stolon stolon-proxy"
+          env:
+            - name: STPROXY_CLUSTER_NAME
+              value: "stolon"
+            - name: STPROXY_LISTEN_ADDRESS
+              value: "0.0.0.0"
+            - name: STPROXY_LOG_COLOR
+              value: "true"
+            - name: STPROXY_LOG_LEVEL
+              value: "debug"
+            - name: STPROXY_METRICS_LISTEN_ADDRESS
+              value: "0.0.0.0:8080"
+            - name: STPROXY_PORT
+              value: "5432"
+            - name: STPROXY_STOP_LISTENING
+              value: "false"
+            - name: STPROXY_STORE_BACKEND
+              value: "consul"
+            - name: STPROXY_STORE_ENDPOINTS
+              value: "consul-consul-ui:80"
+            - name: STPROXY_STORE_SKIP_TLS_VERIFY 
+              value: "true" 
+          ports:
+            - containerPort: 5432
+            - containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 5432
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
